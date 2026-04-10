@@ -1,0 +1,10 @@
+praw
+redis
+fastapi
+uvicorn
+requests
+python-dotenv
+psychopg2-binary
+pandas
+numpy
+python-dotenv
