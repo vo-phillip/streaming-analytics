@@ -1,0 +1,42 @@
+x-common-env: &common-env
+  - POSTGRES_HOST=${POSTGRES_HOST}
+  - POSTGRES_PORT=${POSTGRES_PORT}
+  - POSTGRES_USER=${POSTGRES_USER}
+  - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+  - POSTGRES_DB=${POSTGRES_DB}
+  - REDIS_HOST=${REDIS_HOST}
+  - REDIS_PORT=${REDIS_PORT}
+  
+
+services:
+  app-api:
+    build: .
+    environment: *common-env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+  app-processor:
+    build: .
+    environment: *common-env
+    depends_on:
+      - postgres
+      - redis
+    command: python analytics/processor.py
+  app-ingestor:
+    build: .
+    environment: *common-env
+    depends_on:
+      - postgres
+      - redis
+    command: python ingestion/ingestor.py
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+  redis:
+    image: redis:7
