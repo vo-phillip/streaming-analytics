@@ -1,27 +1,46 @@
-import praw
-from config import REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD, REDDIT_USER_AGENT, REDIS_HOST, REDIS_PORT
+from config import REDIS_HOST, REDIS_PORT, RIOT_API_KEY, RIOT_REGION
+import requests
 import redis
 import json
 import time
 
-reddit = praw.Reddit(
-    client_id=REDDIT_CLIENT_ID,
-    client_secret=REDDIT_CLIENT_SECRET,
-    username=REDDIT_USERNAME,
-    password=REDDIT_PASSWORD,
-    user_agent=REDDIT_USER_AGENT
-)
-
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
+def get_platinum_players():
+    url = f"https://{RIOT_REGION}.api.riotgames.com/lol/league/v4/entries/RANKED_SOLO_5x5/PLATINUM/I?page=1"
+    headers = {"X-Riot-Token": RIOT_API_KEY}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        return [player["puuid"] for player in data[:50]]
+    else:
+        print(f"Error fetching data from Riot API: {response.status_code}")
+        return []
+
+def get_champion_mastery(puuid):
+    url = f"https://{RIOT_REGION}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}"
+    headers = {"X-Riot-Token": RIOT_API_KEY}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        champions = response.json()
+        return [{"puuid": puuid, "championId": champ["championId"], "championLevel": champ["championLevel"], 
+                 "championPoints": champ["championPoints"], "lastPlayTime": champ["lastPlayTime"]} for champ in champions[:10]]
+    else:
+        print(f"Error fetching champion mastery for {puuid}: {response.status_code}")
+        return []
+
 while True:
-    posts = reddit.subreddit("leagueoflegends").new(limit=100)
-    for post in posts:
-        if r.sismember("seen_post_ids", post.id):
-            continue
-        print(f"Subreddit Title: {post.title}, Score: {post.score}")
-        post_data = json.dumps({"title": post.title, "score": post.score, "id": post.id, "created_utc": post.created_utc})
-        r.rpush("reddit_posts", post_data)
-        r.sadd("seen_post_ids", post.id)
-    time.sleep(60)
+    platinum_players = get_platinum_players()
+    for puuid in platinum_players:
+        champion_data = get_champion_mastery(puuid)
+        for champ in champion_data:
+            entry_key = f"{puuid}:{champ['championId']}"
+            if r.sismember("seen_entries", entry_key):
+                continue
+            r.rpush("champions", json.dumps(champ))
+            r.sadd("seen_entries", entry_key)
+        # Sleep to avoid hitting rate limits
+        time.sleep(1)  
+    # Sleep for 2 minutes before fetching again
+    time.sleep(120)  
 
